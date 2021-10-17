@@ -5,10 +5,10 @@ const socket = net.Socket();
 class RemoteRequester {
   #responseCallbacks = new Map();
 
-  request(body) {
+  request({ method, path, body }) {
     const requestId = nanoid();
 
-    socket.write(JSON.stringify({ requestId, body }));
+    socket.write(JSON.stringify({ requestId, method, path, body }));
 
     return new Promise((resolve) => {
       const timeoutHandle = setTimeout(() => {
@@ -38,11 +38,18 @@ class RemoteRequester {
 const remoteRequester = new RemoteRequester();
 
 const connectionStatusSubject = new rxjs.BehaviorSubject("pending");
+const authStateSubject = new rxjs.BehaviorSubject({ type: "unauthenticated" });
 
 socket.connect(8080, "127.0.0.1");
 
 socket.on("connect", () => {
   connectionStatusSubject.next("connected");
+
+  remoteRequester
+    .request({ method: "subscribe", path: "auth_state" })
+    .then((response) => {
+      console.log("auth_state subscribe response", response);
+    });
 });
 
 socket.on("error", () => {
@@ -114,7 +121,11 @@ function Login() {
       event.preventDefault();
 
       remoteRequester
-        .request({ type: "login", username, password })
+        .request({
+          method: "contract",
+          path: "sign_in",
+          body: { username, password },
+        })
         .then((response) => {
           console.log("logged in response", response);
         });
