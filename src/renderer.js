@@ -1,6 +1,8 @@
+import { writeStringToSocket } from "./util/writeStringToSocket.js";
+import { readMessagesFromSocket } from "./util/readMessagesFromSocket.js";
+
 const net = require("net");
 const { nanoid } = require("nanoid");
-const socket = net.Socket();
 
 class RemoteRequester {
   #responseCallbacks = new Map();
@@ -8,7 +10,7 @@ class RemoteRequester {
   request({ method, path, body }) {
     const requestId = nanoid();
 
-    socket.write(JSON.stringify({ requestId, method, path, body }));
+    writeStringToSocket(socket, JSON.stringify({ requestId, method, path, body }));
 
     return new Promise((resolve) => {
       const timeoutHandle = setTimeout(() => {
@@ -38,7 +40,8 @@ class RemoteRequester {
 const remoteRequester = new RemoteRequester();
 
 const connectionStatusSubject = new rxjs.BehaviorSubject("pending");
-const authStateSubject = new rxjs.BehaviorSubject({ type: "unauthenticated" });
+
+const socket = net.Socket();
 
 socket.connect(8080, "127.0.0.1");
 
@@ -56,13 +59,20 @@ socket.on("error", () => {
   connectionStatusSubject.next("error");
 });
 
-socket.on("data", (data) => {
-  const message = JSON.parse(data);
-  const responseId = message.responseId;
-  const body = message.body;
+socket.on("data", (dataBuffer) => {
+  const dataUint8Array = new Uint8Array(dataBuffer);
+  const strMessages = readMessagesFromSocket(dataUint8Array);
 
-  if (responseId) {
-    remoteRequester.invoke(responseId, body);
+  for (const strMessage of strMessages) {
+    const message = JSON.parse(strMessage);
+    const responseId = message.responseId;
+    const body = message.body;
+
+    console.log("incoming message", message);
+
+    if (responseId) {
+      remoteRequester.invoke(responseId, body);
+    }
   }
 });
 
